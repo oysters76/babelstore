@@ -4,7 +4,10 @@ class Color {
         this.r = r;
         this.g = g;
         this.b = b;
+        this.extraData = -1;
     }
+    getData() { return this.extraData; }
+    setData(n) { this.extraData = n; }
     distance(c) {
         let dr = this.r - c.r;
         let dg = this.g - c.g;
@@ -13,6 +16,40 @@ class Color {
         dg *= dg;
         db *= db;
         return dr + dg + db;
+    }
+    static rand() {
+        return Math.random() * 255;
+    }
+    static random() {
+        return new Color(Color.rand(), Color.rand(), Color.rand());
+    }
+    add(c) {
+        this.g += c.g;
+        this.b += c.b;
+        this.r += c.r;
+        return this;
+    }
+    div(num) {
+        this.g /= num;
+        this.b /= num;
+        this.r /= num;
+        return this;
+    }
+    static compare(c1, c2) {
+        return c1.r == c2.r && c1.b == c2.b && c1.g == c2.g;
+    }
+    static arrayEquals(c1, c2) {
+        if (c1.length != c2.length)
+            return false;
+        for (let i = 0; i < c1.length; i++) {
+            if (!Color.compare(c1[i], c2[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+    static copy(c) {
+        return new Color(c.r, c.g, c.b);
     }
 }
 function getImageData(img) {
@@ -25,6 +62,17 @@ function getImageData(img) {
 }
 function printRGB(r, g, b) {
     console.log("R: " + r + " G: " + g + " B: " + b);
+}
+function imageToColors(data) {
+    let pixels = [];
+    let i = 0;
+    for (; i <= data.length - 4; i += 4) {
+        let red = data[i];
+        let green = data[i + 1];
+        let blue = data[i + 2];
+        pixels.push(new Color(red, green, blue));
+    }
+    return pixels;
 }
 function processImageData(data, colorMatch) {
     let i = 0;
@@ -109,7 +157,76 @@ class NaiveColorMatcher {
         return colorMap[ind];
     }
 }
+class KMeansColor {
+    constructor(points, colorSize) {
+        this.points = points;
+        this.means = this.fit(colorSize);
+    }
+    fit(colorSize) {
+        let clusters = [];
+        let means = [];
+        for (let i = 0; i < colorSize; i++) {
+            means.push(Color.random());
+            clusters.push([]);
+        }
+        let k = 0;
+        while (k < 100) {
+            for (let i = 0; i < this.points.length; i++) {
+                let minD = this.points[i].distance(means[0]);
+                let ind = 0;
+                for (let j = 1; j < means.length; j++) {
+                    let d = this.points[i].distance(means[j]);
+                    if (minD > d) {
+                        minD = d;
+                        ind = j;
+                    }
+                }
+                clusters[ind].push(i);
+            }
+            let updatedMeans = [];
+            for (let i = 0; i < clusters.length; i++) {
+                let cluster = clusters[i];
+                let c = new Color(0, 0, 0);
+                for (let j = 0; j < cluster.length; j++) {
+                    c.add(this.points[cluster[j]]);
+                }
+                updatedMeans.push(c.div(cluster.length));
+            }
+            means = updatedMeans;
+            k++;
+        }
+        return means;
+    }
+    getSuitableColor(colorMap, c) {
+        let minD = c.distance(this.means[0]);
+        let ind = 0;
+        for (let j = 1; j < this.means.length; j++) {
+            let d = c.distance(this.means[j]);
+            if (minD > d) {
+                minD = d;
+                ind = j;
+            }
+        }
+        let r = Color.copy(this.means[ind]);
+        r.setData(ind);
+        return r;
+    }
+}
 //end of approaches
+function mapToSymbol(symbols, c) {
+    let d = c.getData();
+    if (d < 0 || d > symbols.length)
+        return "";
+    return symbols[d];
+}
+function imageToText(symbols, colorData) {
+    let text = "";
+    for (let i = 0; i < colorData.length; i++) {
+        text += mapToSymbol(symbols, colorData[i]);
+    }
+    return text;
+}
+const BABEL_SYMBOLS = 'abcdefghijklmnopqrstuvwxyz. ,';
 const BABEL_COLOR_MAP = [
     // contains colors for each letter in babel lib (MAX 29).
     new Color(0, 0, 0),
@@ -131,13 +248,20 @@ const BABEL_COLOR_MAP = [
     new Color(160, 128, 96),
     new Color(255, 208, 160), //18
 ];
+const COLOR_SIZE = 5;
 const mainCanvas = document.getElementById("mainCanvas");
 const ctx = mainCanvas.getContext("2d");
 const testImage = document.getElementById("testImage");
 mainCanvas.width = testImage.width;
 mainCanvas.height = testImage.height;
-let colorMatcherApproach = new NaiveColorMatcher();
-let data = unravelColors(processImageData(getImageData(testImage).data, colorMatcherApproach));
-let imageData = new ImageData(data, testImage.width, testImage.height);
-console.log(imageData);
-ctx.putImageData(imageData, 0, 0);
+let imgData = getImageData(testImage).data;
+let colorMatcherApproach = new KMeansColor(imageToColors(imgData), COLOR_SIZE);
+let colorData = processImageData(imgData, colorMatcherApproach);
+console.log(imageToText(BABEL_SYMBOLS, colorData));
+//Visualization: 
+// let data: Uint8ClampedArray = unravelColors(
+//   colorData
+// );
+// let imageData = new ImageData(data, testImage.width, testImage.height);
+// console.log(imageData);
+// ctx.putImageData(imageData, 0, 0);
